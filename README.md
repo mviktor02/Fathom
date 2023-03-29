@@ -138,6 +138,7 @@ License
 (C) 2013-2015 Ronald de Man (original code)
 (C) 2015 basil (new modifications)
 (C) 2016-2020 Jon Dart (additional modifications)
+(C) 2023 Viktor Molnár (additional modifications)
 
 This version of Fathom is released under the MIT License:
 

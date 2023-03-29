@@ -2,6 +2,7 @@
  * tbconfig.h
  * (C) 2015 basil, all rights reserved,
  * Modifications Copyright 2016-2017 Jon Dart
+ * Modifications Copyright (c) 2023 by Viktor Molnár
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),

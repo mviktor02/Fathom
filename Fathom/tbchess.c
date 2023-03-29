@@ -1,6 +1,7 @@
 /*
 Copyright (c) 2015 basil00
 Modifications Copyright (c) 2016-2020 by Jon Dart
+Modifications Copyright (c) 2023 by Viktor Molnár
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -65,6 +66,11 @@ SOFTWARE.
 
 #define BEST_NONE               0xFFFF
 #define SCORE_ILLEGAL           0x7FFF
+
+#include <stdint.h>
+#include "tbconfig.h"
+#include "tbprobe.h"
+#include "assert.h"
 
 // Note: WHITE, BLACK values are reverse of Stockfish
 #ifdef __cplusplus

@@ -1,7 +1,8 @@
 /*
- * fathom.c
+ * fathom.cpp
  * (C) 2015 basil, all rights reserved.
  * (C) 2018-2019 Jon Dart, All Rights Reserved.
+ * (C) 2023 Viktor Molnár, All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,11 +23,14 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#define DLL_EXPORT __declspec(dllexport)
+
 #include <assert.h>
-#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
+#include <windows.h>
 
 #include "tbprobe.h"
 
@@ -504,6 +508,22 @@ static void print_PV(struct pos *pos)
 }
 
 /*
+ * Returns the best move available to us from the current position
+ */
+static char* best_move(struct pos *pos)
+{
+    struct pos temp = *pos;
+    unsigned move = tb_probe_root(pos->white, pos->black, pos->kings,
+            pos->queens, pos->rooks, pos->bishops, pos->knights, pos->pawns,
+            pos->rule50, pos->castling, pos->ep, pos->turn, NULL);
+    char str[32];
+    move_to_str(pos, move, str);
+    // restore to root position
+    *pos = temp;
+    return str;
+}
+
+/*
  * Print a list of moves that match the WDL value.
  */
 static bool print_moves(struct pos *pos, unsigned *results, bool prev,
@@ -524,131 +544,77 @@ static bool print_moves(struct pos *pos, unsigned *results, bool prev,
 }
 
 /*
- * Print the help message.
+ * Converts the given string to BSTR
+ *
+ * Usage on C# side:
+ * 
+ * [DllImport(@"test.dll", CallingConvention = CallingConvention.Cdecl)]
+ * [return: MarshalAs(UnmanagedType.BStr)]
+ * private static extern string GetSomeText();
+ * 
  */
-static void print_help(const char *prog)
+BSTR ansi_to_bstr(std::string str)
 {
-    printf("\n");
-    printf("usage: %s [--help] [--path=PATH] [--test] FEN\n\n", prog);
-    printf("WHERE:\n");
-    printf("\tFEN\n");
-    printf("\t\tThe position (as a FEN string) to be probed.\n");
-    printf("\t--help\n");
-    printf("\t\tPrint this helpful message.\n");
-    printf("\t--path=PATH\n");
-    printf("\t\tSet the tablebase PATH string.\n");
-    printf("\t--test\n");
-    printf("\t\tPrint the result only.  Useful for scripts.\n");
-    printf("\n");
-    printf("DESCRIPTION:\n");
-    printf("\tThis program is a stand-alone Syzygy tablebase probe tool.  "
-        "The\n");
-    printf("\tprogram takes as input a FEN string representation of a "
-        "chess\n");
-    printf("\tposition and outputs a PGN representation of the probe "
-        "result.\n");
-    printf("\n");
-    printf("\tIn addition to the standard fields, the output PGN "
-        "represents the\n");
-    printf("\tfollowing information:\n");
-    printf("\t- Result: \"1-0\" (white wins), \"1/2-1/2\" (draw), or "
-        "\"0-1\" (black wins)\n");
-    printf("\t- The Win-Draw-Loss (WDL) value for the next move: \"Win\", "
-        "\"Draw\",\n");
-    printf("\t  \"Loss\", \"CursedWin\" (win but 50-move draw) or "
-        "\"BlessedLoss\" (loss\n");
-    printf("\t  but 50-move draw)\n");
-    printf("\t- The Distance-To-Zero (DTZ) value (in plys) for the next "
-        "move\n");
-    printf("\t- WinningMoves: The list of all winning moves\n");
-    printf("\t- DrawingMoves: The list of all drawing moves\n");
-    printf("\t- LosingMoves: The list of all losing moves\n");
-    printf("\n");
-    printf("\tThe PGN contains a pseudo \"principle variation\" of "
-        "Syzygy vs. Syzygy\n");
-    printf("\tfor the input position.  Each PV move is rational with "
-        "respect to\n");
-    printf("\tpreserving the WDL value.  The PV does not represent the "
-        "shortest\n");
-    printf("\tmate nor the most natural human moves.\n");
-    printf("\n");
+    const char* input = str.c_str();
+    BSTR result = NULL;
+    int lenA = lstrlenA(input);
+    int lenW = ::MultiByteToWideChar(CP_ACP, 0, input, lenA, NULL, 0);
+    if (lenW > 0)
+    {
+        result = ::SysAllocStringLen(0, lenW);
+        ::MultiByteToWideChar(CP_ACP, 0, input, lenA, result, lenW);
+    } 
+    return result;
 }
 
-
 /*
- * Main:
+ * Initializes the tablebase with given path
+ *
+ * Returns whether the initialization was successful (true) or not (false)
  */
-#define OPTION_HELP     0
-#define OPTION_PATH     1
-#define OPTION_TEST     2
-int main(int argc, char **argv)
+extern "C" DLL_EXPORT bool SetPath(char* path)
 {
-    static struct option long_options[] =
-    {
-        {"help", 0, 0, OPTION_HELP},
-        {"path", 1, 0, OPTION_PATH},
-        {"test", 0, 0, OPTION_TEST},
-        {NULL, 0, 0, 0}
-    };
-    char *path = NULL;
-    bool test = false;
-    while (true)
-    {
-        int idx;
-        int opt = getopt_long(argc, argv, "", long_options, &idx);
-        if (opt < 0)
-            break;
-        switch (opt)
-        {
-            case OPTION_PATH:
-                path = (char*)malloc(sizeof(char)*(strlen(optarg)+1));
-                assert(path != NULL);
-                strcpy(path,optarg);
-                break;
-            case OPTION_TEST:
-                test = true;
-                break;
-            case OPTION_HELP:
-            default:
-            usage:
-                print_help(argv[0]);
-                return EXIT_SUCCESS;
-        }
-    }
-    if (optind != argc-1)
-        goto usage;
-    const char *fen = argv[optind];
-
     // (0) init:
     if (path == NULL)
         path = getenv("TB_PATH");
     if (path == NULL) {
         fprintf(stderr, "Path not set");
-        exit(EXIT_FAILURE);
+        return false;
     }
     tb_init(path);
     if (TB_LARGEST == 0)
     {
         fprintf(stderr, "error: unable to initialize tablebase; no tablebase "
             "files found\n");
-        exit(EXIT_FAILURE);
+        return false;
     }
+    return true;
+}
 
+/*
+ * Returns the correct move to make in order to maximalize odds of winning
+ */
+extern "C" DLL_EXPORT BSTR SyzygyLookup(const char* fen)
+{
+    
+    // (0) check if tablebase is initialized by SetPath
+    if (TB_LARGEST == 0)
+    {
+        return ansi_to_bstr("error: tablebase is not initialized");
+    }
+    
     // (1) parse the FEN:
     struct pos pos0;
     struct pos *pos = &pos0;
     if (!parse_FEN(pos, fen))
     {
-        fprintf(stderr, "error: unable to parse FEN string \"%s\"\n", fen);
-        exit(EXIT_FAILURE);
+        return ansi_to_bstr("error: unable to parse FEN string");
     }
 
     // (2) probe the TB:
     if (tb_pop_count(pos->white | pos->black) > TB_LARGEST)
     {
-        fprintf(stderr, "error: unable to probe tablebase; FEN string \"%s\" "
-            "has too many pieces (max=%u)\n", fen, TB_LARGEST);
-        exit(EXIT_FAILURE);
+        return ansi_to_bstr("error: unable to probe tablebase; FEN string has too many pieces");
     }
     unsigned results[TB_MAX_MOVES];
     unsigned res = tb_probe_root(pos->white, pos->black, pos->kings,
@@ -656,90 +622,10 @@ int main(int argc, char **argv)
         pos->rule50, pos->castling, pos->ep, pos->turn, results);
     if (res == TB_RESULT_FAILED)
     {
-        fprintf(stderr, "error: unable to probe tablebase; position "
-            "invalid, illegal or not in tablebase\n");
-        exit(EXIT_FAILURE);
+        return ansi_to_bstr("error: unable to probe tablebase; position invalid, illegal or not in tablebase");
     }
 
     // (3) Output:
-    unsigned wdl = TB_GET_WDL(res);
-    if (test)
-    {
-        printf("%s\n", wdl_to_str[(pos->turn? wdl: 4-wdl)]);
-        return 0;
-    }
-    const char *wdl_to_name_str[5] =
-    {
-        "Loss",
-        "BlessedLoss",
-        "Draw",
-        "CursedWin",
-        "Win"
-    };
-    printf("[Event \"\"]\n");
-    printf("[Site \"\"]\n");
-    printf("[Date \"??\"]\n");
-    printf("[Round \"-\"]\n");
-    printf("[White \"Syzygy\"]\n");
-    printf("[Black \"Syzygy\"]\n");
-    printf("[Result \"%s\"]\n", wdl_to_str[(pos->turn? wdl: 4-wdl)]);
-    printf("[FEN \"%s\"]\n", fen);
-    printf("[WDL \"%s\"]\n", wdl_to_name_str[wdl]);
-    printf("[DTZ \"%u\"]\n", TB_GET_DTZ(res));
-    printf("[WinningMoves \"");
-    bool prev = false;
-    print_moves(pos, results, prev, TB_WIN);
-    printf("\"]\n");
-    printf("[DrawingMoves \"");
-    prev = false;
-    prev = print_moves(pos, results, prev, TB_CURSED_WIN);
-    prev = print_moves(pos, results, prev, TB_DRAW);
-    prev = print_moves(pos, results, prev, TB_BLESSED_LOSS);
-    printf("\"]\n");
-    printf("[LosingMoves \"");
-    prev = false;
-    print_moves(pos, results, prev, TB_LOSS);
-    printf("\"]\n");
-    print_PV(pos);
-
-    struct TbRootMoves moves;
-    int result = tb_probe_root_dtz(pos->white, pos->black, pos->kings,
-            pos->queens, pos->rooks, pos->bishops, pos->knights, pos->pawns,
-                               pos->rule50, pos->castling, pos->ep, pos->turn, false, true, &moves);
-
-
-    if (!result) {
-      fprintf(stderr,"DTZ proble failed\n");
-      return -1;
-    }
-    printf("%d moves returned from DTZ probe\n",moves.size);
-    char str[20];
-    for (unsigned i = 0; i < moves.size; i++) {
-      struct TbRootMove *m = &(moves.moves[i]);
-      move_parts_to_str(pos, TB_MOVE_FROM(m->move),
-                        TB_MOVE_TO(m->move),
-                        TB_MOVE_PROMOTES(m->move),str);
-
-      printf("%s rank = %d score=%d\n", str, m->tbRank, m->tbScore);
-    }
-    result = tb_probe_root_wdl(pos->white, pos->black, pos->kings,
-            pos->queens, pos->rooks, pos->bishops, pos->knights, pos->pawns,
-                               pos->rule50, pos->castling, pos->ep, pos->turn, true, &moves);
-
-
-    if (!result) {
-      fprintf(stderr,"WDL proble failed\n");
-      return -1;
-    }
-    printf("%d moves returned from WDL probe\n",moves.size);
-    for (unsigned i = 0; i < moves.size; i++) {
-      struct TbRootMove *m = &(moves.moves[i]);
-      move_parts_to_str(pos, TB_MOVE_FROM(m->move),
-                        TB_MOVE_TO(m->move),
-                        TB_MOVE_PROMOTES(m->move),str);
-
-      printf("%s rank = %d score=%d\n", str, m->tbRank, m->tbScore);
-    }
-    return 0;
+    return ansi_to_bstr(best_move(pos));
 }
 

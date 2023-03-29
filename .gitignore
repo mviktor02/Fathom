@@ -1,0 +1,11 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+/x64/
+/Fathom/x64/
+/Release/
+/Debug/
+/.idea/
+/.vs/
