@@ -508,16 +508,21 @@ static void print_PV(struct pos *pos)
 }
 
 /*
- * Returns the best move available to us from the current position
+ * Returns the best move available to us from the current position as "<FROM> <TO> <PROMOTES>"
  */
-static char* best_move(struct pos *pos)
+static const std::string best_move(struct pos *pos)
 {
     struct pos temp = *pos;
     unsigned move = tb_probe_root(pos->white, pos->black, pos->kings,
             pos->queens, pos->rooks, pos->bishops, pos->knights, pos->pawns,
             pos->rule50, pos->castling, pos->ep, pos->turn, NULL);
-    char str[32];
-    move_to_str(pos, move, str);
+    
+    unsigned from     = TB_GET_FROM(move);
+    unsigned to       = TB_GET_TO(move);
+    unsigned promotes = TB_GET_PROMOTES(move);
+
+    std::string str = "" + std::to_string(from) + " " + std::to_string(to) + " " + std::to_string(promotes);
+    
     // restore to root position
     *pos = temp;
     return str;
